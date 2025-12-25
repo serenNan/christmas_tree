@@ -106,35 +106,35 @@
         import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'; 
         import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
-        // --- CONFIGURATION ---
+        // --- CONFIGURATION (优化后的参数) ---
         const CONFIG = {
             colors: {
-                bg: 0x000000, 
-                champagneGold: 0xffd966, 
-                deepGreen: 0x03180a,     
-                accentRed: 0x990000,     
+                bg: 0x000000,
+                champagneGold: 0xffd966,
+                deepGreen: 0x03180a,
+                accentRed: 0x990000,
             },
             particles: {
-                count: 1500,     
-                dustCount: 2500, 
-                treeHeight: 24,  
-                treeRadius: 8    
+                count: 1200,      // 优化：从 1500 降至 1200
+                dustCount: 1500,  // 优化：从 2500 降至 1500
+                treeHeight: 24,
+                treeRadius: 8
             },
             camera: {
-                z: 50 
+                z: 50
             },
             // --- 螺旋系统配置 ---
-            spiralParticleCount: 1200, 
+            spiralParticleCount: 800,  // 优化：从 1200 降至 800
             spiralHeight: 28,
             spiralRadius: 12,
             spiralTurns: 5,
             // --- 雪花系统配置 ---
             snow: {
-                count: 3500,        // 【修改】大幅增加数量，确保“铺满”感
-                speed: 1.5,         
-                spreadRadius: 60,   
-                topY: 60,           // 【修改】提高上限
-                bottomY: -50        // 【修改】降低下限，确保覆盖全屏
+                count: 2000,        // 优化：从 3500 降至 2000，仍然足够铺满
+                speed: 1.5,
+                spreadRadius: 60,
+                topY: 60,
+                bottomY: -50
             }
         };
 
@@ -147,10 +147,18 @@
         };
 
         let scene, camera, renderer, composer;
-        let mainGroup; 
+        let mainGroup;
         let clock = new THREE.Clock();
-        let particleSystem = []; 
+        let particleSystem = [];  // 只用于 PHOTO 类型
         let photoMeshGroup = new THREE.Group();
+
+        // InstancedMesh 装饰粒子系统
+        let instancedMeshes = {};  // { box, star, goldSphere, redSphere, cane }
+        let particleData = [];     // 存储每个粒子的运动数据
+        const dummy = new THREE.Object3D();
+
+        // 灰尘 Points 系统
+        let dustPoints, dustGeo;
         let handLandmarker, video, webcamCanvas, webcamCtx;
         let caneTexture; 
 
@@ -158,9 +166,8 @@
         let spiralSystem, spiralGeo, spiralMat;
         let spiralMix = 0; 
         
-        // 全局变量定义：雪花系统
-        let snowSystem = [];
-        let snowGroup;
+        // 全局变量定义：雪花系统 (优化为 Points 粒子系统)
+        let snowPoints, snowGeo;
 
         async function init() {
             initThree();
@@ -232,9 +239,14 @@
 
         function setupPostProcessing() {
             const renderScene = new RenderPass(scene, camera);
-            const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-            bloomPass.threshold = 0.7; 
-            bloomPass.strength = 0.45; 
+
+            // 使用半分辨率以提升性能
+            const bloomPass = new UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth / 2, window.innerHeight / 2),
+                1.5, 0.4, 0.85
+            );
+            bloomPass.threshold = 0.7;
+            bloomPass.strength = 0.45;
             bloomPass.radius = 0.4;
 
             composer = new EffectComposer(renderer);
@@ -260,100 +272,87 @@
             caneTexture.repeat.set(3, 3);
         }
 
-        // --- 下雪逻辑 ---
+        // --- 下雪逻辑 (优化：使用 Points 粒子系统，单次 draw call) ---
         function createSnowTexture() {
             const canvas = document.createElement('canvas');
-            canvas.width = 32; canvas.height = 32;
+            canvas.width = 64; canvas.height = 64;
             const ctx = canvas.getContext('2d');
-            
+
             // 绘制柔和的雪花 (径向渐变)
-            const grad = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+            const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
             grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
-            grad.addColorStop(0.4, 'rgba(255, 255, 255, 0.8)');
+            grad.addColorStop(0.3, 'rgba(255, 255, 255, 0.8)');
+            grad.addColorStop(0.6, 'rgba(255, 255, 255, 0.4)');
             grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-            
+
             ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, 32, 32);
+            ctx.fillRect(0, 0, 64, 64);
 
             return new THREE.CanvasTexture(canvas);
         }
 
         function createSnowfall() {
-            snowGroup = new THREE.Group();
-            const texture = createSnowTexture();
-            
-            // 使用 Sprite 材质以保证雪花始终面向相机，且性能更好
-            // 或者继续使用 PlaneGeometry 如果需要旋转效果 (雪花通常旋转不明显，为了轻盈感，Sprite 或者小的 Plane 都行)
-            // 这里为了模拟真实的飘落翻转感，使用小的 PlaneGeometry
-            const geometry = new THREE.PlaneGeometry(0.4, 0.4); // 【修改】略微增大尺寸
-            const material = new THREE.MeshBasicMaterial({ 
-                map: texture, 
-                side: THREE.DoubleSide,
+            const snowCount = CONFIG.snow.count;
+            const positions = new Float32Array(snowCount * 3);
+            const velocities = new Float32Array(snowCount);   // 速度
+            const phases = new Float32Array(snowCount);       // 飘动相位
+            const swaySpeed = new Float32Array(snowCount);    // 飘动速度
+
+            for (let i = 0; i < snowCount; i++) {
+                // 初始位置
+                positions[i * 3] = (Math.random() - 0.5) * CONFIG.snow.spreadRadius * 2;
+                positions[i * 3 + 1] = Math.random() * (CONFIG.snow.topY - CONFIG.snow.bottomY) + CONFIG.snow.bottomY;
+                positions[i * 3 + 2] = (Math.random() - 0.5) * CONFIG.snow.spreadRadius * 2;
+
+                // 运动参数
+                velocities[i] = CONFIG.snow.speed * (0.6 + Math.random() * 0.8);
+                phases[i] = Math.random() * 100;
+                swaySpeed[i] = 0.5 + Math.random() * 1.0;
+            }
+
+            snowGeo = new THREE.BufferGeometry();
+            snowGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            snowGeo.userData = { velocities, phases, swaySpeed };
+
+            const material = new THREE.PointsMaterial({
+                map: createSnowTexture(),
+                size: 1.2,
                 transparent: true,
                 opacity: 0.9,
-                depthWrite: false, // 防止遮挡问题
-                blending: THREE.AdditiveBlending // 让雪花看起来晶莹剔透
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                sizeAttenuation: true
             });
 
-            for (let i = 0; i < CONFIG.snow.count; i++) {
-                const mesh = new THREE.Mesh(geometry, material);
-                
-                // 【关键】随机初始位置：Y轴随机分布在整个高度区间，确保一开始就铺满画面
-                mesh.position.set(
-                    (Math.random() - 0.5) * CONFIG.snow.spreadRadius * 2,
-                    Math.random() * (CONFIG.snow.topY - CONFIG.snow.bottomY) + CONFIG.snow.bottomY,
-                    (Math.random() - 0.5) * CONFIG.snow.spreadRadius * 2
-                );
-
-                // 随机旋转
-                mesh.rotation.set(
-                    Math.random() * Math.PI,
-                    Math.random() * Math.PI,
-                    Math.random() * Math.PI
-                );
-
-                // 存储个体运动数据
-                const data = {
-                    mesh: mesh,
-                    speed: CONFIG.snow.speed * (0.6 + Math.random() * 0.8), // 速度差异
-                    rotationSpeed: {
-                        x: (Math.random() - 0.5) * 1.0,
-                        y: (Math.random() - 0.5) * 1.0,
-                        z: (Math.random() - 0.5) * 1.0
-                    },
-                    swayOffset: Math.random() * 100, // 摆动相位偏移
-                    swaySpeed: 0.5 + Math.random() * 1.0 // 摆动速度
-                };
-
-                snowSystem.push(data);
-                snowGroup.add(mesh);
-            }
-            mainGroup.add(snowGroup);
+            snowPoints = new THREE.Points(snowGeo, material);
+            mainGroup.add(snowPoints);
         }
 
         function updateSnowfall(dt) {
+            const positions = snowGeo.attributes.position.array;
+            const { velocities, phases, swaySpeed } = snowGeo.userData;
             const time = clock.getElapsedTime();
+            const count = positions.length / 3;
 
-            snowSystem.forEach(item => {
+            for (let i = 0; i < count; i++) {
+                const idx = i * 3;
+
                 // 下落
-                item.mesh.position.y -= item.speed * dt;
+                positions[idx + 1] -= velocities[i] * dt;
 
-                // 左右前后飘动 (Sine wave) - 更加不规则的飘动
-                item.mesh.position.x += Math.sin(time * item.swaySpeed + item.swayOffset) * 1.5 * dt;
-                item.mesh.position.z += Math.cos(time * (item.swaySpeed * 0.8) + item.swayOffset) * 1.5 * dt;
-
-                // 翻滚旋转
-                item.mesh.rotation.x += item.rotationSpeed.x * dt;
-                item.mesh.rotation.y += item.rotationSpeed.y * dt;
-                item.mesh.rotation.z += item.rotationSpeed.z * dt;
+                // 飘动 (简化的 sin/cos 计算)
+                positions[idx] += Math.sin(time * swaySpeed[i] + phases[i]) * 0.03;
+                positions[idx + 2] += Math.cos(time * swaySpeed[i] * 0.8 + phases[i]) * 0.03;
 
                 // 循环重置
-                if (item.mesh.position.y < CONFIG.snow.bottomY) {
-                    item.mesh.position.y = CONFIG.snow.topY;
-                    item.mesh.position.x = (Math.random() - 0.5) * CONFIG.snow.spreadRadius * 2;
-                    item.mesh.position.z = (Math.random() - 0.5) * CONFIG.snow.spreadRadius * 2;
+                if (positions[idx + 1] < CONFIG.snow.bottomY) {
+                    positions[idx + 1] = CONFIG.snow.topY;
+                    positions[idx] = (Math.random() - 0.5) * CONFIG.snow.spreadRadius * 2;
+                    positions[idx + 2] = (Math.random() - 0.5) * CONFIG.snow.spreadRadius * 2;
                 }
-            });
+            }
+
+            snowGeo.attributes.position.needsUpdate = true;
         }
 
         // --- 螺旋粒子系统逻辑 ---
@@ -464,43 +463,33 @@
             spiralGeo.attributes.position.needsUpdate = true;
         }
 
-        class Particle {
-            constructor(mesh, type, isDust = false) {
+        // PhotoParticle 类 - 只用于照片（需要特殊交互）
+        class PhotoParticle {
+            constructor(mesh) {
                 this.mesh = mesh;
-                this.type = type;
-                this.isDust = isDust;
-                
                 this.posTree = new THREE.Vector3();
                 this.posScatter = new THREE.Vector3();
-                this.baseScale = mesh.scale.x; 
-
-                // Individual Spin Speed
-                const speedMult = (type === 'PHOTO') ? 0.3 : 2.0;
-
+                this.baseScale = 0.8;
                 this.spinSpeed = new THREE.Vector3(
-                    (Math.random() - 0.5) * speedMult,
-                    (Math.random() - 0.5) * speedMult,
-                    (Math.random() - 0.5) * speedMult
+                    (Math.random() - 0.5) * 0.3,
+                    (Math.random() - 0.5) * 0.3,
+                    (Math.random() - 0.5) * 0.3
                 );
-
                 this.calculatePositions();
             }
 
             calculatePositions() {
-                // TREE: Tight Spiral
                 const h = CONFIG.particles.treeHeight;
                 const halfH = h / 2;
-                let t = Math.random(); 
-                t = Math.pow(t, 0.8); 
+                let t = Math.pow(Math.random(), 0.8);
                 const y = (t * h) - halfH;
-                let rMax = CONFIG.particles.treeRadius * (1.0 - t); 
+                let rMax = CONFIG.particles.treeRadius * (1.0 - t);
                 if (rMax < 0.5) rMax = 0.5;
-                const angle = t * 50 * Math.PI + Math.random() * Math.PI; 
-                const r = rMax * (0.8 + Math.random() * 0.4); 
+                const angle = t * 50 * Math.PI + Math.random() * Math.PI;
+                const r = rMax * (0.8 + Math.random() * 0.4);
                 this.posTree.set(Math.cos(angle) * r, y, Math.sin(angle) * r);
 
-                // SCATTER: 3D Sphere
-                let rScatter = this.isDust ? (12 + Math.random()*20) : (8 + Math.random()*12);
+                const rScatter = 8 + Math.random() * 12;
                 const theta = Math.random() * Math.PI * 2;
                 const phi = Math.acos(2 * Math.random() - 1);
                 this.posScatter.set(
@@ -512,7 +501,6 @@
 
             update(dt, mode, focusTargetMesh) {
                 let target = this.posTree;
-                
                 if (mode === 'SCATTER') target = this.posScatter;
                 else if (mode === 'FOCUS') {
                     if (this.mesh === focusTargetMesh) {
@@ -524,60 +512,74 @@
                     }
                 }
 
-                // Movement Easing
-                const lerpSpeed = (mode === 'FOCUS' && this.mesh === focusTargetMesh) ? 5.0 : 2.0; 
+                const lerpSpeed = (mode === 'FOCUS' && this.mesh === focusTargetMesh) ? 5.0 : 2.0;
                 this.mesh.position.lerp(target, lerpSpeed * dt);
 
-                // Rotation Logic
                 if (mode === 'SCATTER') {
                     this.mesh.rotation.x += this.spinSpeed.x * dt;
                     this.mesh.rotation.y += this.spinSpeed.y * dt;
-                    this.mesh.rotation.z += this.spinSpeed.z * dt; 
+                    this.mesh.rotation.z += this.spinSpeed.z * dt;
                 } else if (mode === 'TREE') {
                     this.mesh.rotation.x = THREE.MathUtils.lerp(this.mesh.rotation.x, 0, dt);
                     this.mesh.rotation.z = THREE.MathUtils.lerp(this.mesh.rotation.z, 0, dt);
-                    this.mesh.rotation.y += 0.5 * dt; 
-                }
-                
-                if (mode === 'FOCUS' && this.mesh === focusTargetMesh) {
-                    this.mesh.lookAt(camera.position); 
+                    this.mesh.rotation.y += 0.5 * dt;
                 }
 
-                // Scale Logic
-                let s = this.baseScale;
-                if (this.isDust) {
-                    s = this.baseScale * (0.8 + 0.4 * Math.sin(clock.elapsedTime * 4 + this.mesh.id));
-                    if (mode === 'TREE') s = 0; 
-                } else if (mode === 'SCATTER' && this.type === 'PHOTO') {
-                    // Large preview size in scatter
-                    s = this.baseScale * 2.5; 
-                } else if (mode === 'FOCUS') {
-                    if (this.mesh === focusTargetMesh) s = 4.5; 
-                    else s = this.baseScale * 0.8; 
+                if (mode === 'FOCUS' && this.mesh === focusTargetMesh) {
+                    this.mesh.lookAt(camera.position);
                 }
-                
-                this.mesh.scale.lerp(new THREE.Vector3(s,s,s), 4*dt);
+
+                let s = this.baseScale;
+                if (mode === 'SCATTER') s = this.baseScale * 2.5;
+                else if (mode === 'FOCUS') {
+                    s = (this.mesh === focusTargetMesh) ? 4.5 : this.baseScale * 0.8;
+                }
+                this.mesh.scale.lerp(new THREE.Vector3(s, s, s), 4 * dt);
             }
         }
 
-        // --- CREATION ---
+        // 计算粒子位置的辅助函数
+        function calcTreePosition(out) {
+            const h = CONFIG.particles.treeHeight;
+            const halfH = h / 2;
+            let t = Math.pow(Math.random(), 0.8);
+            const y = (t * h) - halfH;
+            let rMax = CONFIG.particles.treeRadius * (1.0 - t);
+            if (rMax < 0.5) rMax = 0.5;
+            const angle = t * 50 * Math.PI + Math.random() * Math.PI;
+            const r = rMax * (0.8 + Math.random() * 0.4);
+            out.set(Math.cos(angle) * r, y, Math.sin(angle) * r);
+        }
+
+        function calcScatterPosition(out) {
+            const rScatter = 8 + Math.random() * 12;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            out.set(
+                rScatter * Math.sin(phi) * Math.cos(theta),
+                rScatter * Math.sin(phi) * Math.sin(theta),
+                rScatter * Math.cos(phi)
+            );
+        }
+
+        // --- CREATION (优化：使用 InstancedMesh) ---
         function createParticles() {
-            const sphereGeo = new THREE.SphereGeometry(0.5, 32, 32); 
-            const boxGeo = new THREE.BoxGeometry(0.55, 0.55, 0.55); 
-            // 星星几何体
-            const smallStarGeo = new THREE.OctahedronGeometry(0.45, 0); 
-            
+            // 降低几何体精度以提升性能
+            const sphereGeo = new THREE.SphereGeometry(0.5, 16, 16);
+            const boxGeo = new THREE.BoxGeometry(0.55, 0.55, 0.55);
+            const smallStarGeo = new THREE.OctahedronGeometry(0.45, 0);
+
             const curve = new THREE.CatmullRomCurve3([
                 new THREE.Vector3(0, -0.5, 0), new THREE.Vector3(0, 0.3, 0),
                 new THREE.Vector3(0.1, 0.5, 0), new THREE.Vector3(0.3, 0.4, 0)
             ]);
-            const candyGeo = new THREE.TubeGeometry(curve, 16, 0.08, 8, false);
+            const candyGeo = new THREE.TubeGeometry(curve, 12, 0.08, 6, false);
 
             const goldMat = new THREE.MeshStandardMaterial({
                 color: CONFIG.colors.champagneGold,
                 metalness: 1.0, roughness: 0.1,
-                envMapIntensity: 2.0, 
-                emissive: 0x443300,   
+                envMapIntensity: 2.0,
+                emissive: 0x443300,
                 emissiveIntensity: 0.3
             });
 
@@ -585,69 +587,208 @@
                 color: CONFIG.colors.deepGreen,
                 metalness: 0.2, roughness: 0.8,
                 emissive: 0x002200,
-                emissiveIntensity: 0.2 
+                emissiveIntensity: 0.2
             });
 
-            const redMat = new THREE.MeshPhysicalMaterial({
+            // 改用 MeshStandardMaterial 替代 MeshPhysicalMaterial (clearcoat 开销大)
+            const redMat = new THREE.MeshStandardMaterial({
                 color: CONFIG.colors.accentRed,
-                metalness: 0.3, roughness: 0.2, clearcoat: 1.0,
-                emissive: 0x330000
+                metalness: 0.5, roughness: 0.2,
+                emissive: 0x330000,
+                emissiveIntensity: 0.3
             });
-            
+
             const candyMat = new THREE.MeshStandardMaterial({ map: caneTexture, roughness: 0.4 });
 
-            for (let i = 0; i < CONFIG.particles.count; i++) {
-                const rand = Math.random();
-                let mesh, type;
-                
-                if (rand < 0.40) {
-                    mesh = new THREE.Mesh(boxGeo, greenMat);
-                    type = 'BOX';
-                } else if (rand < 0.70) {
-                    // 星星装饰
-                    mesh = new THREE.Mesh(smallStarGeo, goldMat);
-                    type = 'GOLD_STAR';
-                } else if (rand < 0.92) {
-                    mesh = new THREE.Mesh(sphereGeo, goldMat);
-                    type = 'GOLD_SPHERE';
-                } else if (rand < 0.97) {
-                    mesh = new THREE.Mesh(sphereGeo, redMat);
-                    type = 'RED';
-                } else {
-                    mesh = new THREE.Mesh(candyGeo, candyMat);
-                    type = 'CANE';
+            // 按类型分配数量
+            const counts = {
+                box: Math.floor(CONFIG.particles.count * 0.40),
+                star: Math.floor(CONFIG.particles.count * 0.30),
+                goldSphere: Math.floor(CONFIG.particles.count * 0.22),
+                redSphere: Math.floor(CONFIG.particles.count * 0.05),
+                cane: Math.floor(CONFIG.particles.count * 0.03)
+            };
+
+            // 创建 InstancedMesh
+            instancedMeshes.box = new THREE.InstancedMesh(boxGeo, greenMat, counts.box);
+            instancedMeshes.star = new THREE.InstancedMesh(smallStarGeo, goldMat, counts.star);
+            instancedMeshes.goldSphere = new THREE.InstancedMesh(sphereGeo, goldMat, counts.goldSphere);
+            instancedMeshes.redSphere = new THREE.InstancedMesh(sphereGeo, redMat, counts.redSphere);
+            instancedMeshes.cane = new THREE.InstancedMesh(candyGeo, candyMat, counts.cane);
+
+            // 初始化每个粒子的数据
+            let globalIndex = 0;
+            for (const [type, count] of Object.entries(counts)) {
+                for (let i = 0; i < count; i++) {
+                    const data = {
+                        type: type,
+                        instanceIndex: i,
+                        posTree: new THREE.Vector3(),
+                        posScatter: new THREE.Vector3(),
+                        currentPos: new THREE.Vector3(),
+                        rotation: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6),
+                        baseScale: 0.4 + Math.random() * 0.5,
+                        currentScale: 0.4 + Math.random() * 0.5,
+                        spinSpeed: new THREE.Vector3(
+                            (Math.random() - 0.5) * 2.0,
+                            (Math.random() - 0.5) * 2.0,
+                            (Math.random() - 0.5) * 2.0
+                        )
+                    };
+
+                    calcTreePosition(data.posTree);
+                    calcScatterPosition(data.posScatter);
+                    data.currentPos.copy(data.posTree);
+
+                    particleData.push(data);
+                    globalIndex++;
                 }
 
-                const s = 0.4 + Math.random() * 0.5;
-                mesh.scale.set(s,s,s);
-                mesh.rotation.set(Math.random()*6, Math.random()*6, Math.random()*6);
-                
-                mainGroup.add(mesh);
-                particleSystem.push(new Particle(mesh, type, false));
+                mainGroup.add(instancedMeshes[type]);
             }
 
+            // 初始化矩阵
+            updateInstancedMeshes(0);
+
+            // 树顶星星
             const starGeo = new THREE.OctahedronGeometry(1.2, 0);
             const starMat = new THREE.MeshStandardMaterial({
                 color: 0xffdd88, emissive: 0xffaa00, emissiveIntensity: 1.0,
                 metalness: 1.0, roughness: 0
             });
             const star = new THREE.Mesh(starGeo, starMat);
-            star.position.set(0, CONFIG.particles.treeHeight/2 + 1.2, 0);
+            star.position.set(0, CONFIG.particles.treeHeight / 2 + 1.2, 0);
             mainGroup.add(star);
-            
+
             mainGroup.add(photoMeshGroup);
         }
 
-        function createDust() {
-            const geo = new THREE.TetrahedronGeometry(0.08, 0);
-            const mat = new THREE.MeshBasicMaterial({ color: 0xffeebb, transparent: true, opacity: 0.8 });
-            
-            for(let i=0; i<CONFIG.particles.dustCount; i++) {
-                 const mesh = new THREE.Mesh(geo, mat);
-                 mesh.scale.setScalar(0.5 + Math.random());
-                 mainGroup.add(mesh);
-                 particleSystem.push(new Particle(mesh, 'DUST', true));
+        // 更新 InstancedMesh 矩阵
+        function updateInstancedMeshes(dt) {
+            const mode = STATE.mode;
+            const time = clock.getElapsedTime();
+
+            for (const data of particleData) {
+                // 目标位置
+                const target = (mode === 'TREE') ? data.posTree : data.posScatter;
+
+                // 平滑移动
+                data.currentPos.lerp(target, 2.0 * dt || 0.1);
+
+                // 旋转
+                if (mode === 'SCATTER') {
+                    data.rotation.x += data.spinSpeed.x * dt;
+                    data.rotation.y += data.spinSpeed.y * dt;
+                    data.rotation.z += data.spinSpeed.z * dt;
+                } else if (mode === 'TREE') {
+                    data.rotation.x = THREE.MathUtils.lerp(data.rotation.x, 0, dt * 2);
+                    data.rotation.z = THREE.MathUtils.lerp(data.rotation.z, 0, dt * 2);
+                    data.rotation.y += 0.5 * dt;
+                }
+
+                // 缩放
+                const targetScale = data.baseScale;
+                data.currentScale = THREE.MathUtils.lerp(data.currentScale, targetScale, 4 * dt || 0.1);
+
+                // 设置 dummy 并更新矩阵
+                dummy.position.copy(data.currentPos);
+                dummy.rotation.copy(data.rotation);
+                dummy.scale.setScalar(data.currentScale);
+                dummy.updateMatrix();
+
+                instancedMeshes[data.type].setMatrixAt(data.instanceIndex, dummy.matrix);
             }
+
+            // 标记需要更新
+            for (const mesh of Object.values(instancedMeshes)) {
+                mesh.instanceMatrix.needsUpdate = true;
+            }
+        }
+
+        // --- 灰尘粒子 (优化：使用 Points 系统) ---
+        function createDust() {
+            const count = CONFIG.particles.dustCount;
+            const positions = new Float32Array(count * 3);
+            const posTree = new Float32Array(count * 3);
+            const posScatter = new Float32Array(count * 3);
+            const sizes = new Float32Array(count);
+            const phases = new Float32Array(count);
+
+            for (let i = 0; i < count; i++) {
+                // 计算树形位置
+                const h = CONFIG.particles.treeHeight;
+                const halfH = h / 2;
+                let t = Math.pow(Math.random(), 0.8);
+                const y = (t * h) - halfH;
+                let rMax = CONFIG.particles.treeRadius * (1.0 - t);
+                if (rMax < 0.5) rMax = 0.5;
+                const angle = t * 50 * Math.PI + Math.random() * Math.PI;
+                const r = rMax * (0.8 + Math.random() * 0.4);
+
+                posTree[i * 3] = Math.cos(angle) * r;
+                posTree[i * 3 + 1] = y;
+                posTree[i * 3 + 2] = Math.sin(angle) * r;
+
+                // 计算散开位置
+                const rScatter = 12 + Math.random() * 20;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+
+                posScatter[i * 3] = rScatter * Math.sin(phi) * Math.cos(theta);
+                posScatter[i * 3 + 1] = rScatter * Math.sin(phi) * Math.sin(theta);
+                posScatter[i * 3 + 2] = rScatter * Math.cos(phi);
+
+                // 初始位置
+                positions[i * 3] = posTree[i * 3];
+                positions[i * 3 + 1] = posTree[i * 3 + 1];
+                positions[i * 3 + 2] = posTree[i * 3 + 2];
+
+                sizes[i] = 0.5 + Math.random();
+                phases[i] = Math.random() * 100;
+            }
+
+            dustGeo = new THREE.BufferGeometry();
+            dustGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            dustGeo.userData = { posTree, posScatter, sizes, phases };
+
+            const mat = new THREE.PointsMaterial({
+                color: 0xffeebb,
+                size: 0.3,
+                transparent: true,
+                opacity: 0.8,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                sizeAttenuation: true
+            });
+
+            dustPoints = new THREE.Points(dustGeo, mat);
+            mainGroup.add(dustPoints);
+        }
+
+        // 更新灰尘粒子
+        function updateDust(dt) {
+            const mode = STATE.mode;
+            const positions = dustGeo.attributes.position.array;
+            const { posTree, posScatter, sizes, phases } = dustGeo.userData;
+            const count = positions.length / 3;
+            const time = clock.getElapsedTime();
+
+            // TREE 模式下灰尘不可见
+            dustPoints.visible = (mode !== 'TREE');
+
+            if (mode === 'TREE') return;
+
+            for (let i = 0; i < count; i++) {
+                const idx = i * 3;
+                const target = (mode === 'SCATTER' || mode === 'FOCUS') ? posScatter : posTree;
+
+                // 平滑移动
+                positions[idx] += (target[idx] - positions[idx]) * 2.0 * dt;
+                positions[idx + 1] += (target[idx + 1] - positions[idx + 1]) * 2.0 * dt;
+                positions[idx + 2] += (target[idx + 2] - positions[idx + 2]) * 2.0 * dt;
+            }
+
+            dustGeo.attributes.position.needsUpdate = true;
         }
 
         function addPhotoToScene(texture) {
@@ -698,7 +839,7 @@
             group.scale.set(s,s,s);
             
             photoMeshGroup.add(group);
-            particleSystem.push(new Particle(group, 'PHOTO', false));
+            particleSystem.push(new PhotoParticle(group));
         }
         
         function handleImageUpload(e) {
@@ -771,8 +912,9 @@
                 if (pinchDist < 0.05) {
                     if (STATE.mode !== 'FOCUS') {
                         STATE.mode = 'FOCUS';
-                        const photos = particleSystem.filter(p => p.type === 'PHOTO');
-                        if (photos.length) STATE.focusTarget = photos[Math.floor(Math.random()*photos.length)].mesh;
+                        if (particleSystem.length) {
+                            STATE.focusTarget = particleSystem[Math.floor(Math.random() * particleSystem.length)].mesh;
+                        }
                     }
                 } else if (avgDist < 0.25) {
                     STATE.mode = 'TREE';
@@ -826,10 +968,15 @@
             mainGroup.rotation.y = STATE.rotation.y;
             mainGroup.rotation.x = STATE.rotation.x;
 
-            updateSpiralParticles(dt); // 更新螺旋动画
-            updateSnowfall(dt);        // 更新下雪动画
+            // 更新各粒子系统
+            updateSpiralParticles(dt);
+            updateSnowfall(dt);
+            updateInstancedMeshes(dt);  // 更新装饰粒子
+            updateDust(dt);              // 更新灰尘粒子
 
+            // 更新照片粒子
             particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
+
             composer.render();
         }
 

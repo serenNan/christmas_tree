@@ -1,0 +1,8 @@
+.vscode/
+.history/
+screenshots/
+build/
+.cache/
+*.log
+.DS_Store
+Thumbs.db
