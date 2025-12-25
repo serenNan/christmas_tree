@@ -565,6 +565,15 @@
             }
         }
 
+        // 按导入顺序循环选择照片
+        let currentPhotoIndex = 0;
+        function selectNextPhoto() {
+            if (!particleSystem.length) return null;
+            const photo = particleSystem[currentPhotoIndex];
+            currentPhotoIndex = (currentPhotoIndex + 1) % particleSystem.length;
+            return photo;
+        }
+
         // 计算粒子位置的辅助函数
         function calcTreePosition(out) {
             const h = CONFIG.particles.treeHeight;
@@ -1095,7 +1104,11 @@
                         if (STATE.mode !== 'FOCUS') {
                             STATE.mode = 'FOCUS';
                             if (particleSystem.length) {
-                                STATE.focusTarget = particleSystem[Math.floor(Math.random() * particleSystem.length)].mesh;
+                                // 按导入顺序循环选择照片
+                                const selected = selectNextPhoto();
+                                if (selected) {
+                                    STATE.focusTarget = selected.mesh;
+                                }
                             }
                         }
                     } else if (stableGesture === 'TREE') {
