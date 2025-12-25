@@ -1168,18 +1168,36 @@
             requestAnimationFrame(animate);
             const dt = clock.getDelta();
 
-            // Rotation Logic
-            if (STATE.mode === 'SCATTER' && STATE.hand.detected) {
-                const targetRotY = STATE.hand.x * Math.PI * 0.9; 
-                const targetRotX = STATE.hand.y * Math.PI * 0.25;
-                STATE.rotation.y += (targetRotY - STATE.rotation.y) * 3.0 * dt;
-                STATE.rotation.x += (targetRotX - STATE.rotation.x) * 3.0 * dt;
+            // Rotation Logic - 手在左右两侧时持续旋转
+            if (STATE.hand.detected) {
+                // 定义中间区域 (x: -0.3 到 0.3 为中间)
+                const deadZone = 0.3;
+
+                if (STATE.hand.x < -deadZone) {
+                    // 手在左侧: 持续向左旋转 (顺时针)
+                    const rotSpeed = Math.abs(STATE.hand.x + deadZone) * 2.0;  // 越靠边旋转越快
+                    STATE.rotation.y -= rotSpeed * dt;
+                } else if (STATE.hand.x > deadZone) {
+                    // 手在右侧: 持续向右旋转 (逆时针)
+                    const rotSpeed = (STATE.hand.x - deadZone) * 2.0;
+                    STATE.rotation.y += rotSpeed * dt;
+                } else {
+                    // 手在中间: 保持当前旋转或缓慢自转
+                    if (STATE.mode === 'TREE') {
+                        STATE.rotation.y += 0.3 * dt;
+                    }
+                }
+
+                // 上下控制倾斜 (可选)
+                const targetRotX = STATE.hand.y * Math.PI * 0.15;
+                STATE.rotation.x += (targetRotX - STATE.rotation.x) * 2.0 * dt;
             } else {
+                // 没有检测到手: 默认自动旋转
                 if(STATE.mode === 'TREE') {
                     STATE.rotation.y += 0.3 * dt;
                     STATE.rotation.x += (0 - STATE.rotation.x) * 2.0 * dt;
                 } else {
-                     STATE.rotation.y += 0.1 * dt; 
+                     STATE.rotation.y += 0.1 * dt;
                 }
             }
 
