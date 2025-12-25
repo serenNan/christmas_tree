@@ -95,7 +95,7 @@
                     <span>Show Camera</span>
                 </label>
             </div>
-            <div class="text-gold/50 text-[9px] mt-2 tracking-widest uppercase">Press 'H' to Hide Controls | 'D' to Toggle Camera</div>
+            <div class="text-gold/50 text-[9px] mt-2 tracking-widest uppercase">Press 'D' for Pure Mode</div>
         </div>
     </div>
 
@@ -1083,37 +1083,35 @@
             });
             document.getElementById('file-input').addEventListener('change', handleImageUpload);
 
-            // 调试窗口开关
-            const debugToggle = document.getElementById('debug-toggle');
+            // UI 元素
+            const uiLayer = document.getElementById('ui-layer');
             const webcamPanel = document.getElementById('webcam-panel');
+            const debugToggle = document.getElementById('debug-toggle');
 
-            function toggleDebugPanel(show) {
-                if (webcamPanel) {
-                    webcamPanel.style.display = show ? 'block' : 'none';
-                }
-                if (debugToggle) {
-                    debugToggle.checked = show;
-                }
+            let isPureMode = false;  // 纯净模式状态
+
+            // 切换纯净模式 (D键)
+            function togglePureMode() {
+                isPureMode = !isPureMode;
+                if (uiLayer) uiLayer.style.display = isPureMode ? 'none' : 'flex';
+                if (webcamPanel) webcamPanel.style.display = isPureMode ? 'none' : 'block';
             }
 
+            // 复选框控制摄像头窗口
             if (debugToggle) {
                 debugToggle.addEventListener('change', (e) => {
-                    toggleDebugPanel(e.target.checked);
+                    if (webcamPanel) {
+                        webcamPanel.style.display = e.target.checked ? 'block' : 'none';
+                    }
                 });
             }
 
             // 键盘快捷键
             window.addEventListener('keydown', (e) => {
                 const key = e.key.toLowerCase();
-                // H: 隐藏控制面板
-                if (key === 'h') {
-                    const controls = document.querySelector('.upload-wrapper');
-                    if (controls) controls.classList.toggle('ui-hidden');
-                }
-                // D: 切换调试窗口
+                // D: 切换纯净模式 (隐藏所有UI)
                 if (key === 'd') {
-                    const isVisible = webcamPanel && webcamPanel.style.display !== 'none';
-                    toggleDebugPanel(!isVisible);
+                    togglePureMode();
                 }
             });
         }
