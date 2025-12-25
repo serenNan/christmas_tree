@@ -193,17 +193,22 @@
 
         async function init() {
             initThree();
-            setupEnvironment(); 
+            setupEnvironment();
             setupLights();
             createTextures();
-            createParticles(); 
+            createParticles();
             createDust();
-            createSpiralParticles(); 
-            createSnowfall(); // 初始化下雪
+            createSpiralParticles();
+            createSnowfall();
             setupPostProcessing();
             setupEvents();
-            await initMediaPipe();
-            
+
+            // 并行加载: MediaPipe 和 images 文件夹图片
+            await Promise.all([
+                initMediaPipe(),
+                loadImagesFromFolder()
+            ]);
+
             const loader = document.getElementById('loader');
             loader.style.opacity = 0;
             setTimeout(() => loader.remove(), 800);
@@ -877,6 +882,49 @@
                 }
                 reader.readAsDataURL(f);
             });
+        }
+
+        // 从 images 文件夹加载预设图片
+        async function loadImagesFromFolder() {
+            // 预设图片列表 (需要手动维护，或通过服务端获取)
+            // 支持的格式: jpg, jpeg, png, gif, webp
+            const imageList = [
+                'images/1.jpg',
+                'images/2.jpg',
+                'images/3.jpg',
+                'images/4.jpg',
+                'images/5.jpg',
+                'images/6.jpg',
+                'images/7.jpg',
+                'images/8.jpg',
+                'images/9.jpg',
+                'images/10.jpg',
+                // 可以继续添加更多图片
+            ];
+
+            const loader = new THREE.TextureLoader();
+
+            for (const imagePath of imageList) {
+                try {
+                    // 尝试加载图片
+                    const texture = await new Promise((resolve, reject) => {
+                        loader.load(
+                            imagePath,
+                            (t) => {
+                                t.colorSpace = THREE.SRGBColorSpace;
+                                resolve(t);
+                            },
+                            undefined,
+                            () => reject(new Error(`Failed to load ${imagePath}`))
+                        );
+                    });
+                    addPhotoToScene(texture);
+                    console.log(`Loaded: ${imagePath}`);
+                } catch (err) {
+                    // 图片不存在，静默跳过
+                    // console.log(`Skipped: ${imagePath}`);
+                }
+            }
         }
 
         // --- MEDIAPIPE ---
