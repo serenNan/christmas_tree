@@ -91,10 +91,24 @@
         </div>
     </div>
 
-    <!-- Webcam hidden structure -->
-    <div id="webcam-wrapper" class="absolute bottom-10 right-10 w-[120px] h-[90px] border border-white/10 overflow-hidden opacity-0 pointer-events-none">
-        <video id="webcam" autoplay playsinline style="display:none;"></video>
-        <canvas id="webcam-preview"></canvas>
+    <!-- Webcam Debug Panel -->
+    <div id="webcam-panel" class="absolute bottom-4 right-4 z-20 pointer-events-none">
+        <!-- 摄像头预览框 -->
+        <div id="webcam-wrapper" class="w-[200px] h-[150px] rounded-lg overflow-hidden border border-gold/30 bg-black/50 backdrop-blur-sm relative"
+             style="transform: scaleX(-1);">
+            <video id="webcam" autoplay playsinline class="w-full h-full object-cover"></video>
+            <!-- 手势状态标签 -->
+            <div id="gesture-badge" class="absolute top-2 left-2 px-2 py-1 rounded text-xs font-bold bg-gold text-black"
+                 style="transform: scaleX(-1); display: none;">
+                READY
+            </div>
+        </div>
+        <!-- 手势说明 -->
+        <div class="mt-2 p-2 rounded-lg bg-black/60 backdrop-blur-sm border border-gold/20 text-[10px] text-gold/70 leading-relaxed">
+            <div>✊ <b class="text-gold">握拳</b> → 圣诞树模式</div>
+            <div>✋ <b class="text-gold">张开</b> → 散开模式</div>
+            <div>🤏 <b class="text-gold">捏合</b> → 照片聚焦</div>
+        </div>
     </div>
 
     <script type="module">
@@ -159,7 +173,7 @@
 
         // 灰尘 Points 系统
         let dustPoints, dustGeo;
-        let handLandmarker, video, webcamCanvas, webcamCtx;
+        let handLandmarker, video;
         let caneTexture; 
 
         // 全局变量定义：螺旋系统
@@ -860,9 +874,6 @@
         // --- MEDIAPIPE ---
         async function initMediaPipe() {
             video = document.getElementById('webcam');
-            webcamCanvas = document.getElementById('webcam-preview');
-            webcamCtx = webcamCanvas.getContext('2d');
-            webcamCanvas.width = 160; webcamCanvas.height = 120;
 
             const vision = await FilesetResolver.forVisionTasks(
                 "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
@@ -875,11 +886,18 @@
                 runningMode: "VIDEO",
                 numHands: 1
             });
-            
+
             if (navigator.mediaDevices?.getUserMedia) {
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                video.srcObject = stream;
-                video.addEventListener("loadeddata", predictWebcam);
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+                    video.srcObject = stream;
+                    video.addEventListener("loadeddata", predictWebcam);
+                } catch (err) {
+                    console.warn('摄像头访问失败:', err);
+                    // 隐藏摄像头面板
+                    const panel = document.getElementById('webcam-panel');
+                    if (panel) panel.style.display = 'none';
+                }
             }
         }
 
@@ -895,11 +913,43 @@
             requestAnimationFrame(predictWebcam);
         }
 
+        // 手势状态显示
+        const gestureBadge = document.getElementById('gesture-badge');
+
+        function updateGestureBadge(gesture, detected) {
+            if (!gestureBadge) return;
+
+            if (!detected) {
+                gestureBadge.style.display = 'none';
+                return;
+            }
+
+            gestureBadge.style.display = 'block';
+            gestureBadge.textContent = gesture;
+
+            // 根据手势设置颜色
+            switch (gesture) {
+                case 'TREE ✊':
+                    gestureBadge.className = 'absolute top-2 left-2 px-2 py-1 rounded text-xs font-bold bg-green-500 text-white';
+                    break;
+                case 'SCATTER ✋':
+                    gestureBadge.className = 'absolute top-2 left-2 px-2 py-1 rounded text-xs font-bold bg-blue-500 text-white';
+                    break;
+                case 'FOCUS 🤏':
+                    gestureBadge.className = 'absolute top-2 left-2 px-2 py-1 rounded text-xs font-bold bg-purple-500 text-white';
+                    break;
+                default:
+                    gestureBadge.className = 'absolute top-2 left-2 px-2 py-1 rounded text-xs font-bold bg-gold text-black';
+            }
+            // 保持 scaleX(-1) 因为父元素镜像了
+            gestureBadge.style.transform = 'scaleX(-1)';
+        }
+
         function processGestures(result) {
             if (result.landmarks && result.landmarks.length > 0) {
                 STATE.hand.detected = true;
                 const lm = result.landmarks[0];
-                STATE.hand.x = (lm[9].x - 0.5) * 2; 
+                STATE.hand.x = (lm[9].x - 0.5) * 2;
                 STATE.hand.y = (lm[9].y - 0.5) * 2;
 
                 const thumb = lm[4]; const index = lm[8]; const wrist = lm[0];
@@ -909,7 +959,10 @@
                 tips.forEach(t => avgDist += Math.hypot(t.x - wrist.x, t.y - wrist.y));
                 avgDist /= 4;
 
+                let gesture = 'DETECTING...';
+
                 if (pinchDist < 0.05) {
+                    gesture = 'FOCUS 🤏';
                     if (STATE.mode !== 'FOCUS') {
                         STATE.mode = 'FOCUS';
                         if (particleSystem.length) {
@@ -917,14 +970,19 @@
                         }
                     }
                 } else if (avgDist < 0.25) {
+                    gesture = 'TREE ✊';
                     STATE.mode = 'TREE';
                     STATE.focusTarget = null;
                 } else if (avgDist > 0.4) {
+                    gesture = 'SCATTER ✋';
                     STATE.mode = 'SCATTER';
                     STATE.focusTarget = null;
                 }
+
+                updateGestureBadge(gesture, true);
             } else {
                 STATE.hand.detected = false;
+                updateGestureBadge('', false);
             }
         }
 
