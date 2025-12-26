@@ -1,0 +1,1411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2025-2026 New Year Countdown</title>
+
+    <!-- Google Fonts -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Cinzel:wght@400;700&display=swap');
+    </style>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        'orbitron': ['Orbitron', 'sans-serif'],
+                        'cinzel': ['Cinzel', 'serif'],
+                    },
+                    colors: {
+                        gold: {
+                            light: '#fceea7',
+                            DEFAULT: '#ffd700',
+                            dim: '#eebb66',
+                        },
+                        newyear: {
+                            red: '#ff1744',
+                            purple: '#aa00ff',
+                            blue: '#2979ff',
+                            cyan: '#00e5ff',
+                        }
+                    },
+                    animation: {
+                        'pulse-glow': 'pulseGlow 2s ease-in-out infinite',
+                        'float': 'float 3s ease-in-out infinite',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Custom Styles -->
+    <style>
+        .ui-hidden {
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+
+        @keyframes pulseGlow {
+            0%, 100% { text-shadow: 0 0 20px rgba(255, 215, 0, 0.8), 0 0 40px rgba(255, 215, 0, 0.6), 0 0 60px rgba(255, 215, 0, 0.4); }
+            50% { text-shadow: 0 0 40px rgba(255, 215, 0, 1), 0 0 80px rgba(255, 215, 0, 0.8), 0 0 120px rgba(255, 215, 0, 0.6); }
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .countdown-digit {
+            background: linear-gradient(180deg, rgba(255,215,0,0.2) 0%, rgba(255,23,68,0.2) 100%);
+            border: 1px solid rgba(255,215,0,0.3);
+            backdrop-filter: blur(10px);
+        }
+
+        .year-text {
+            background: linear-gradient(90deg, #ffd700, #ff1744, #aa00ff, #00e5ff, #ffd700);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: gradientShift 3s linear infinite;
+        }
+
+        @keyframes gradientShift {
+            0% { background-position: 0% center; }
+            100% { background-position: 200% center; }
+        }
+
+        .celebration-text {
+            opacity: 0;
+            transform: scale(0.5);
+            transition: all 1s ease-out;
+        }
+
+        .celebration-text.active {
+            opacity: 1;
+            transform: scale(1);
+        }
+    </style>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+                "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/+esm"
+            }
+        }
+    </script>
+</head>
+<body class="m-0 overflow-hidden bg-black font-orbitron text-white">
+
+    <!-- Loader -->
+    <div id="loader" class="fixed inset-0 bg-black z-50 flex flex-col items-center justify-center transition-opacity duration-[800ms] ease-out">
+        <div class="w-12 h-12 border-2 border-gold/20 border-t-gold rounded-full animate-spin"></div>
+        <div class="text-gold text-sm tracking-[4px] mt-5 uppercase font-light">Loading New Year Magic</div>
+    </div>
+
+    <!-- 3D Canvas Container -->
+    <div id="canvas-container" class="absolute top-0 left-0 w-screen h-screen z-0"></div>
+
+    <!-- UI Layer -->
+    <div id="ui-layer" class="absolute top-0 left-0 w-full h-full z-10 pointer-events-none flex flex-col items-center pt-6 box-border">
+
+        <!-- Year Display -->
+        <div class="text-center mb-2">
+            <div class="flex items-center justify-center gap-4">
+                <span class="text-4xl md:text-6xl font-bold text-gold/60">2025</span>
+                <span class="text-2xl md:text-4xl text-gold animate-pulse">→</span>
+                <span class="text-5xl md:text-7xl font-black year-text">2026</span>
+            </div>
+        </div>
+
+        <!-- Title -->
+        <h1 id="main-title" class="font-cinzel text-3xl md:text-5xl font-bold tracking-[4px]
+                   bg-gradient-to-r from-gold via-newyear-red to-newyear-purple bg-clip-text text-transparent
+                   drop-shadow-[0_0_30px_rgba(255,215,0,0.8)] transition-all duration-500">
+            New Year Countdown
+        </h1>
+
+        <!-- Celebration Text (shown after countdown) -->
+        <div id="celebration-text" class="celebration-text text-4xl md:text-6xl font-black text-center mt-4">
+            <div class="year-text">Happy New Year 2026!</div>
+            <div class="text-gold/80 text-lg md:text-xl mt-2 font-orbitron tracking-widest">新年快乐</div>
+        </div>
+
+        <!-- Countdown Timer -->
+        <div id="countdown-container" class="mt-6 flex gap-3 md:gap-6 pointer-events-none">
+            <div class="countdown-digit rounded-xl px-4 py-3 md:px-6 md:py-4 text-center min-w-[70px] md:min-w-[100px]">
+                <div id="days" class="text-3xl md:text-5xl font-black text-gold">00</div>
+                <div class="text-[10px] md:text-xs text-gold/60 uppercase tracking-widest mt-1">Days</div>
+            </div>
+            <div class="countdown-digit rounded-xl px-4 py-3 md:px-6 md:py-4 text-center min-w-[70px] md:min-w-[100px]">
+                <div id="hours" class="text-3xl md:text-5xl font-black text-newyear-red">00</div>
+                <div class="text-[10px] md:text-xs text-newyear-red/60 uppercase tracking-widest mt-1">Hours</div>
+            </div>
+            <div class="countdown-digit rounded-xl px-4 py-3 md:px-6 md:py-4 text-center min-w-[70px] md:min-w-[100px]">
+                <div id="minutes" class="text-3xl md:text-5xl font-black text-newyear-purple">00</div>
+                <div class="text-[10px] md:text-xs text-newyear-purple/60 uppercase tracking-widest mt-1">Mins</div>
+            </div>
+            <div class="countdown-digit rounded-xl px-4 py-3 md:px-6 md:py-4 text-center min-w-[70px] md:min-w-[100px]">
+                <div id="seconds" class="text-3xl md:text-5xl font-black text-newyear-cyan">00</div>
+                <div class="text-[10px] md:text-xs text-newyear-cyan/60 uppercase tracking-widest mt-1">Secs</div>
+            </div>
+        </div>
+
+        <!-- Upload Controls -->
+        <div class="upload-wrapper mt-6 pointer-events-auto text-center transition-opacity duration-500">
+            <label class="inline-block px-6 py-2.5 bg-neutral-900/60 border border-gold/40 text-gold
+                          cursor-pointer uppercase tracking-[3px] text-[10px] backdrop-blur-sm
+                          transition-all duration-300 hover:bg-gold hover:text-black
+                          hover:shadow-[0_0_20px_rgba(255,215,0,0.5)]">
+                Add Memories
+                <input type="file" id="file-input" multiple accept="image/*" class="hidden">
+            </label>
+            <div class="mt-3 flex items-center justify-center gap-2">
+                <label class="flex items-center gap-2 cursor-pointer text-gold/70 text-[10px] uppercase tracking-wider">
+                    <input type="checkbox" id="debug-toggle" checked
+                           class="w-4 h-4 accent-gold cursor-pointer">
+                    <span>Show Camera</span>
+                </label>
+            </div>
+            <div class="text-gold/50 text-[9px] mt-2 tracking-widest uppercase">Press 'D' for Pure Mode | 'F' for Fireworks</div>
+        </div>
+    </div>
+
+    <!-- Webcam Debug Panel -->
+    <div id="webcam-panel" class="absolute bottom-4 right-4 z-20 pointer-events-none">
+        <div id="webcam-wrapper" class="w-[200px] h-[150px] rounded-lg overflow-hidden border border-gold/30 bg-black/50 backdrop-blur-sm relative"
+             style="transform: scaleX(-1);">
+            <video id="webcam" autoplay playsinline class="w-full h-full object-cover"></video>
+            <div id="gesture-badge" class="absolute top-2 left-2 px-2 py-1 rounded text-xs font-bold bg-gold text-black"
+                 style="transform: scaleX(-1); display: none;">
+                READY
+            </div>
+        </div>
+        <div class="mt-2 p-2 rounded-lg bg-black/60 backdrop-blur-sm border border-gold/20 text-[10px] text-gold/70 leading-relaxed">
+            <div>✊ <b class="text-gold">Fist</b> → Gather Mode</div>
+            <div>✋ <b class="text-gold">Open</b> → Scatter Mode</div>
+            <div>🤏 <b class="text-gold">Pinch</b> → Focus Photo</div>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+        import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
+
+        // --- CONFIGURATION ---
+        const CONFIG = {
+            colors: {
+                bg: 0x050510,
+                gold: 0xffd700,
+                red: 0xff1744,
+                purple: 0xaa00ff,
+                cyan: 0x00e5ff,
+                blue: 0x2979ff,
+            },
+            particles: {
+                count: 1000,
+                dustCount: 1200,
+                sphereRadius: 15,
+            },
+            camera: {
+                z: 55
+            },
+            // 烟花系统配置
+            fireworks: {
+                maxActive: 5,
+                particleCount: 150,
+                launchInterval: 2000,
+            },
+            // 数字粒子配置
+            digitParticles: {
+                count: 600,
+            },
+            // 彩带配置
+            confetti: {
+                count: 500,
+            },
+            // 雪花系统
+            snow: {
+                count: 1500,
+                speed: 1.2,
+                spreadRadius: 70,
+                topY: 60,
+                bottomY: -50
+            }
+        };
+
+        const STATE = {
+            mode: 'GATHER',  // GATHER, SCATTER, FOCUS
+            focusIndex: -1,
+            focusTarget: null,
+            hand: { detected: false, x: 0, y: 0 },
+            rotation: { x: 0, y: 0 },
+            isNewYear: false,
+            celebrationStarted: false,
+        };
+
+        let scene, camera, renderer, composer;
+        let mainGroup;
+        let clock = new THREE.Clock();
+        let particleSystem = [];
+        let photoMeshGroup = new THREE.Group();
+
+        // InstancedMesh 系统
+        let instancedMeshes = {};
+        let particleData = [];
+        const dummy = new THREE.Object3D();
+
+        // 各种粒子系统
+        let dustPoints, dustGeo;
+        let snowPoints, snowGeo;
+        let fireworkSystems = [];
+        let confettiPoints, confettiGeo;
+        let digitParticleSystem, digitGeo;
+
+        // 手势识别
+        let handLandmarker, video;
+
+        // 目标年份 - 2026年1月1日 00:00:00
+        const targetDate = new Date('2026-01-01T00:00:00');
+
+        async function init() {
+            initThree();
+            setupEnvironment();
+            setupLights();
+            createParticles();
+            createDust();
+            createSnowfall();
+            createConfetti();
+            createDigitParticles();
+            setupPostProcessing();
+            setupEvents();
+            startCountdown();
+
+            await Promise.all([
+                initMediaPipe(),
+                loadImagesFromFolder()
+            ]);
+
+            const loader = document.getElementById('loader');
+            loader.style.opacity = 0;
+            setTimeout(() => loader.remove(), 800);
+
+            animate();
+        }
+
+        function initThree() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(CONFIG.colors.bg);
+            scene.fog = new THREE.FogExp2(CONFIG.colors.bg, 0.008);
+
+            camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 0, CONFIG.camera.z);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.toneMapping = THREE.ReinhardToneMapping;
+            renderer.toneMappingExposure = 2.5;
+            container.appendChild(renderer.domElement);
+
+            mainGroup = new THREE.Group();
+            scene.add(mainGroup);
+        }
+
+        function setupEnvironment() {
+            const pmremGenerator = new THREE.PMREMGenerator(renderer);
+            scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+        }
+
+        function setupLights() {
+            const ambient = new THREE.AmbientLight(0xffffff, 0.4);
+            scene.add(ambient);
+
+            const centerLight = new THREE.PointLight(0xffd700, 3, 40);
+            centerLight.position.set(0, 0, 0);
+            mainGroup.add(centerLight);
+
+            const spotGold = new THREE.SpotLight(0xffcc66, 1500);
+            spotGold.position.set(30, 40, 40);
+            spotGold.angle = 0.5;
+            spotGold.penumbra = 0.5;
+            scene.add(spotGold);
+
+            const spotPurple = new THREE.SpotLight(0xaa00ff, 800);
+            spotPurple.position.set(-30, 20, -30);
+            scene.add(spotPurple);
+
+            const spotCyan = new THREE.SpotLight(0x00e5ff, 600);
+            spotCyan.position.set(0, -30, 30);
+            scene.add(spotCyan);
+        }
+
+        function setupPostProcessing() {
+            const renderScene = new RenderPass(scene, camera);
+
+            const bloomPass = new UnrealBloomPass(
+                new THREE.Vector2(window.innerWidth / 2, window.innerHeight / 2),
+                1.5, 0.4, 0.85
+            );
+            bloomPass.threshold = 0.6;
+            bloomPass.strength = 0.8;
+            bloomPass.radius = 0.5;
+
+            composer = new EffectComposer(renderer);
+            composer.addPass(renderScene);
+            composer.addPass(bloomPass);
+        }
+
+        // --- 倒计时逻辑 ---
+        function startCountdown() {
+            updateCountdown();
+            setInterval(updateCountdown, 1000);
+        }
+
+        function updateCountdown() {
+            const now = new Date();
+            const diff = targetDate - now;
+
+            if (diff <= 0) {
+                // 新年到了！
+                document.getElementById('days').textContent = '00';
+                document.getElementById('hours').textContent = '00';
+                document.getElementById('minutes').textContent = '00';
+                document.getElementById('seconds').textContent = '00';
+
+                if (!STATE.isNewYear) {
+                    STATE.isNewYear = true;
+                    triggerCelebration();
+                }
+                return;
+            }
+
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+            document.getElementById('days').textContent = String(days).padStart(2, '0');
+            document.getElementById('hours').textContent = String(hours).padStart(2, '0');
+            document.getElementById('minutes').textContent = String(minutes).padStart(2, '0');
+            document.getElementById('seconds').textContent = String(seconds).padStart(2, '0');
+        }
+
+        function triggerCelebration() {
+            STATE.celebrationStarted = true;
+
+            // 更改标题
+            const title = document.getElementById('main-title');
+            title.textContent = 'Happy New Year!';
+            title.classList.add('animate-pulse-glow');
+
+            // 显示庆祝文字
+            const celebrationText = document.getElementById('celebration-text');
+            celebrationText.classList.add('active');
+
+            // 隐藏倒计时
+            document.getElementById('countdown-container').style.opacity = '0.3';
+
+            // 触发大量烟花
+            for (let i = 0; i < 10; i++) {
+                setTimeout(() => launchFirework(), i * 300);
+            }
+        }
+
+        // --- 雪花系统 ---
+        function createSnowTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64; canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+            grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+            grad.addColorStop(0.3, 'rgba(255, 255, 255, 0.8)');
+            grad.addColorStop(0.6, 'rgba(255, 255, 255, 0.4)');
+            grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 64, 64);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function createSnowfall() {
+            const snowCount = CONFIG.snow.count;
+            const positions = new Float32Array(snowCount * 3);
+            const velocities = new Float32Array(snowCount);
+            const phases = new Float32Array(snowCount);
+            const swaySpeed = new Float32Array(snowCount);
+
+            for (let i = 0; i < snowCount; i++) {
+                positions[i * 3] = (Math.random() - 0.5) * CONFIG.snow.spreadRadius * 2;
+                positions[i * 3 + 1] = Math.random() * (CONFIG.snow.topY - CONFIG.snow.bottomY) + CONFIG.snow.bottomY;
+                positions[i * 3 + 2] = (Math.random() - 0.5) * CONFIG.snow.spreadRadius * 2;
+                velocities[i] = CONFIG.snow.speed * (0.6 + Math.random() * 0.8);
+                phases[i] = Math.random() * 100;
+                swaySpeed[i] = 0.5 + Math.random() * 1.0;
+            }
+
+            snowGeo = new THREE.BufferGeometry();
+            snowGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            snowGeo.userData = { velocities, phases, swaySpeed };
+
+            const material = new THREE.PointsMaterial({
+                map: createSnowTexture(),
+                size: 1.0,
+                transparent: true,
+                opacity: 0.85,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                sizeAttenuation: true
+            });
+
+            snowPoints = new THREE.Points(snowGeo, material);
+            mainGroup.add(snowPoints);
+        }
+
+        function updateSnowfall(dt) {
+            const positions = snowGeo.attributes.position.array;
+            const { velocities, phases, swaySpeed } = snowGeo.userData;
+            const time = clock.getElapsedTime();
+            const count = positions.length / 3;
+
+            for (let i = 0; i < count; i++) {
+                const idx = i * 3;
+                positions[idx + 1] -= velocities[i] * dt;
+                positions[idx] += Math.sin(time * swaySpeed[i] + phases[i]) * 0.02;
+                positions[idx + 2] += Math.cos(time * swaySpeed[i] * 0.8 + phases[i]) * 0.02;
+
+                if (positions[idx + 1] < CONFIG.snow.bottomY) {
+                    positions[idx + 1] = CONFIG.snow.topY;
+                    positions[idx] = (Math.random() - 0.5) * CONFIG.snow.spreadRadius * 2;
+                    positions[idx + 2] = (Math.random() - 0.5) * CONFIG.snow.spreadRadius * 2;
+                }
+            }
+            snowGeo.attributes.position.needsUpdate = true;
+        }
+
+        // --- 彩带系统 ---
+        function createConfetti() {
+            const count = CONFIG.confetti.count;
+            const positions = new Float32Array(count * 3);
+            const colors = new Float32Array(count * 3);
+            const velocities = [];
+            const rotations = [];
+
+            const confettiColors = [
+                new THREE.Color(0xffd700), // gold
+                new THREE.Color(0xff1744), // red
+                new THREE.Color(0xaa00ff), // purple
+                new THREE.Color(0x00e5ff), // cyan
+                new THREE.Color(0x2979ff), // blue
+                new THREE.Color(0xffffff), // white
+            ];
+
+            for (let i = 0; i < count; i++) {
+                positions[i * 3] = (Math.random() - 0.5) * 80;
+                positions[i * 3 + 1] = Math.random() * 100 + 50;
+                positions[i * 3 + 2] = (Math.random() - 0.5) * 80;
+
+                const color = confettiColors[Math.floor(Math.random() * confettiColors.length)];
+                colors[i * 3] = color.r;
+                colors[i * 3 + 1] = color.g;
+                colors[i * 3 + 2] = color.b;
+
+                velocities.push({
+                    x: (Math.random() - 0.5) * 0.3,
+                    y: -(0.5 + Math.random() * 1.5),
+                    z: (Math.random() - 0.5) * 0.3,
+                    rotSpeed: (Math.random() - 0.5) * 5
+                });
+                rotations.push(Math.random() * Math.PI * 2);
+            }
+
+            confettiGeo = new THREE.BufferGeometry();
+            confettiGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            confettiGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            confettiGeo.userData = { velocities, rotations };
+
+            const material = new THREE.PointsMaterial({
+                size: 0.8,
+                transparent: true,
+                opacity: 0.9,
+                vertexColors: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                sizeAttenuation: true
+            });
+
+            confettiPoints = new THREE.Points(confettiGeo, material);
+            confettiPoints.visible = false;
+            mainGroup.add(confettiPoints);
+        }
+
+        function updateConfetti(dt) {
+            if (!STATE.celebrationStarted) return;
+
+            confettiPoints.visible = true;
+            const positions = confettiGeo.attributes.position.array;
+            const { velocities, rotations } = confettiGeo.userData;
+            const count = positions.length / 3;
+
+            for (let i = 0; i < count; i++) {
+                const idx = i * 3;
+                const vel = velocities[i];
+
+                positions[idx] += vel.x * dt * 30;
+                positions[idx + 1] += vel.y * dt * 30;
+                positions[idx + 2] += vel.z * dt * 30;
+
+                // 飘动效果
+                positions[idx] += Math.sin(clock.getElapsedTime() * 2 + i) * 0.05;
+
+                // 循环重置
+                if (positions[idx + 1] < -50) {
+                    positions[idx + 1] = 80 + Math.random() * 20;
+                    positions[idx] = (Math.random() - 0.5) * 80;
+                    positions[idx + 2] = (Math.random() - 0.5) * 80;
+                }
+            }
+            confettiGeo.attributes.position.needsUpdate = true;
+        }
+
+        // --- 烟花系统 ---
+        function launchFirework() {
+            const colors = [0xffd700, 0xff1744, 0xaa00ff, 0x00e5ff, 0x2979ff, 0x00ff88];
+            const color = colors[Math.floor(Math.random() * colors.length)];
+
+            const startX = (Math.random() - 0.5) * 40;
+            const startZ = (Math.random() - 0.5) * 40;
+            const targetY = 10 + Math.random() * 20;
+
+            const particleCount = CONFIG.fireworks.particleCount;
+            const positions = new Float32Array(particleCount * 3);
+            const velocities = [];
+            const lifetimes = [];
+
+            for (let i = 0; i < particleCount; i++) {
+                positions[i * 3] = startX;
+                positions[i * 3 + 1] = -30;
+                positions[i * 3 + 2] = startZ;
+
+                // 爆炸方向 (球形分布)
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+                const speed = 15 + Math.random() * 10;
+
+                velocities.push({
+                    x: Math.sin(phi) * Math.cos(theta) * speed,
+                    y: Math.sin(phi) * Math.sin(theta) * speed,
+                    z: Math.cos(phi) * speed,
+                    launched: false,
+                    exploded: false,
+                    launchSpeed: 80 + Math.random() * 20,
+                    targetY: targetY
+                });
+                lifetimes.push(1.0 + Math.random() * 0.5);
+            }
+
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+            const mat = new THREE.PointsMaterial({
+                color: color,
+                size: 0.6,
+                transparent: true,
+                opacity: 1.0,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                sizeAttenuation: true
+            });
+
+            const points = new THREE.Points(geo, mat);
+            scene.add(points);
+
+            fireworkSystems.push({
+                points,
+                geo,
+                mat,
+                velocities,
+                lifetimes,
+                age: 0,
+                phase: 'launch',
+                startX,
+                startZ,
+                targetY,
+                currentY: -30
+            });
+        }
+
+        function updateFireworks(dt) {
+            for (let i = fireworkSystems.length - 1; i >= 0; i--) {
+                const fw = fireworkSystems[i];
+                const positions = fw.geo.attributes.position.array;
+                const count = positions.length / 3;
+
+                if (fw.phase === 'launch') {
+                    // 发射阶段
+                    fw.currentY += fw.velocities[0].launchSpeed * dt;
+
+                    for (let j = 0; j < count; j++) {
+                        positions[j * 3] = fw.startX;
+                        positions[j * 3 + 1] = fw.currentY;
+                        positions[j * 3 + 2] = fw.startZ;
+                    }
+
+                    if (fw.currentY >= fw.targetY) {
+                        fw.phase = 'explode';
+                        fw.age = 0;
+                    }
+                } else {
+                    // 爆炸阶段
+                    fw.age += dt;
+                    const gravity = 15;
+
+                    for (let j = 0; j < count; j++) {
+                        const idx = j * 3;
+                        const vel = fw.velocities[j];
+
+                        if (!vel.exploded) {
+                            vel.exploded = true;
+                            positions[idx] = fw.startX;
+                            positions[idx + 1] = fw.targetY;
+                            positions[idx + 2] = fw.startZ;
+                        }
+
+                        positions[idx] += vel.x * dt;
+                        positions[idx + 1] += vel.y * dt - gravity * fw.age * dt;
+                        positions[idx + 2] += vel.z * dt;
+
+                        // 阻力
+                        vel.x *= 0.98;
+                        vel.y *= 0.98;
+                        vel.z *= 0.98;
+                    }
+
+                    // 淡出
+                    fw.mat.opacity = Math.max(0, 1 - fw.age / 2.0);
+
+                    if (fw.age > 2.5) {
+                        scene.remove(fw.points);
+                        fw.geo.dispose();
+                        fw.mat.dispose();
+                        fireworkSystems.splice(i, 1);
+                        continue;
+                    }
+                }
+
+                fw.geo.attributes.position.needsUpdate = true;
+            }
+
+            // 自动发射烟花
+            if (STATE.celebrationStarted || Math.random() < 0.005) {
+                if (fireworkSystems.length < CONFIG.fireworks.maxActive) {
+                    launchFirework();
+                }
+            }
+        }
+
+        // --- 数字"2026"粒子系统 ---
+        function createDigitParticles() {
+            const count = CONFIG.digitParticles.count;
+            const positions = new Float32Array(count * 3);
+            const targetPositions = new Float32Array(count * 3);
+            const scatterPositions = new Float32Array(count * 3);
+
+            // 生成"2026"形状的目标位置
+            const digits = ['2', '0', '2', '6'];
+            const digitWidth = 6;
+            const startX = -((digits.length * digitWidth) / 2);
+
+            for (let i = 0; i < count; i++) {
+                // 随机散开位置
+                const r = 20 + Math.random() * 15;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+
+                scatterPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+                scatterPositions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+                scatterPositions[i * 3 + 2] = r * Math.cos(phi);
+
+                // 数字形状位置
+                const digitIndex = Math.floor((i / count) * 4);
+                const localX = startX + digitIndex * digitWidth + (Math.random() - 0.5) * 4;
+                const localY = (Math.random() - 0.5) * 8;
+
+                // 简化的数字轮廓
+                targetPositions[i * 3] = localX;
+                targetPositions[i * 3 + 1] = localY;
+                targetPositions[i * 3 + 2] = (Math.random() - 0.5) * 2;
+
+                // 初始位置 = 散开位置
+                positions[i * 3] = scatterPositions[i * 3];
+                positions[i * 3 + 1] = scatterPositions[i * 3 + 1];
+                positions[i * 3 + 2] = scatterPositions[i * 3 + 2];
+            }
+
+            digitGeo = new THREE.BufferGeometry();
+            digitGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            digitGeo.userData = { targetPositions, scatterPositions };
+
+            const mat = new THREE.PointsMaterial({
+                color: 0xffd700,
+                size: 0.5,
+                transparent: true,
+                opacity: 0.9,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                sizeAttenuation: true
+            });
+
+            digitParticleSystem = new THREE.Points(digitGeo, mat);
+            mainGroup.add(digitParticleSystem);
+        }
+
+        function updateDigitParticles(dt) {
+            const positions = digitGeo.attributes.position.array;
+            const { targetPositions, scatterPositions } = digitGeo.userData;
+            const count = positions.length / 3;
+
+            const useTarget = STATE.mode === 'GATHER';
+            const targets = useTarget ? targetPositions : scatterPositions;
+
+            for (let i = 0; i < count; i++) {
+                const idx = i * 3;
+                positions[idx] += (targets[idx] - positions[idx]) * 2.0 * dt;
+                positions[idx + 1] += (targets[idx + 1] - positions[idx + 1]) * 2.0 * dt;
+                positions[idx + 2] += (targets[idx + 2] - positions[idx + 2]) * 2.0 * dt;
+            }
+
+            digitGeo.attributes.position.needsUpdate = true;
+            digitParticleSystem.rotation.y += 0.1 * dt;
+        }
+
+        // --- 装饰粒子系统 ---
+        function calcGatherPosition(out) {
+            const r = 8 + Math.random() * 6;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            out.set(
+                r * Math.sin(phi) * Math.cos(theta),
+                r * Math.sin(phi) * Math.sin(theta),
+                r * Math.cos(phi)
+            );
+        }
+
+        function calcScatterPosition(out) {
+            const r = 15 + Math.random() * 15;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            out.set(
+                r * Math.sin(phi) * Math.cos(theta),
+                r * Math.sin(phi) * Math.sin(theta),
+                r * Math.cos(phi)
+            );
+        }
+
+        function createParticles() {
+            const sphereGeo = new THREE.SphereGeometry(0.4, 12, 12);
+            const octaGeo = new THREE.OctahedronGeometry(0.35, 0);
+            const boxGeo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
+
+            const goldMat = new THREE.MeshStandardMaterial({
+                color: CONFIG.colors.gold,
+                metalness: 1.0, roughness: 0.1,
+                emissive: 0x332200,
+                emissiveIntensity: 0.4
+            });
+
+            const redMat = new THREE.MeshStandardMaterial({
+                color: CONFIG.colors.red,
+                metalness: 0.8, roughness: 0.2,
+                emissive: 0x330000,
+                emissiveIntensity: 0.3
+            });
+
+            const purpleMat = new THREE.MeshStandardMaterial({
+                color: CONFIG.colors.purple,
+                metalness: 0.8, roughness: 0.2,
+                emissive: 0x220033,
+                emissiveIntensity: 0.3
+            });
+
+            const cyanMat = new THREE.MeshStandardMaterial({
+                color: CONFIG.colors.cyan,
+                metalness: 0.8, roughness: 0.2,
+                emissive: 0x003333,
+                emissiveIntensity: 0.3
+            });
+
+            const counts = {
+                goldSphere: Math.floor(CONFIG.particles.count * 0.30),
+                redSphere: Math.floor(CONFIG.particles.count * 0.25),
+                purpleOcta: Math.floor(CONFIG.particles.count * 0.25),
+                cyanBox: Math.floor(CONFIG.particles.count * 0.20),
+            };
+
+            instancedMeshes.goldSphere = new THREE.InstancedMesh(sphereGeo, goldMat, counts.goldSphere);
+            instancedMeshes.redSphere = new THREE.InstancedMesh(sphereGeo, redMat, counts.redSphere);
+            instancedMeshes.purpleOcta = new THREE.InstancedMesh(octaGeo, purpleMat, counts.purpleOcta);
+            instancedMeshes.cyanBox = new THREE.InstancedMesh(boxGeo, cyanMat, counts.cyanBox);
+
+            for (const [type, count] of Object.entries(counts)) {
+                for (let i = 0; i < count; i++) {
+                    const data = {
+                        type: type,
+                        instanceIndex: i,
+                        posGather: new THREE.Vector3(),
+                        posScatter: new THREE.Vector3(),
+                        currentPos: new THREE.Vector3(),
+                        rotation: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6),
+                        baseScale: 0.3 + Math.random() * 0.5,
+                        currentScale: 0.3 + Math.random() * 0.5,
+                        spinSpeed: new THREE.Vector3(
+                            (Math.random() - 0.5) * 2.0,
+                            (Math.random() - 0.5) * 2.0,
+                            (Math.random() - 0.5) * 2.0
+                        )
+                    };
+
+                    calcGatherPosition(data.posGather);
+                    calcScatterPosition(data.posScatter);
+                    data.currentPos.copy(data.posScatter);
+
+                    particleData.push(data);
+                }
+
+                mainGroup.add(instancedMeshes[type]);
+            }
+
+            updateInstancedMeshes(0);
+            mainGroup.add(photoMeshGroup);
+        }
+
+        function updateInstancedMeshes(dt) {
+            const mode = STATE.mode;
+
+            for (const data of particleData) {
+                const target = (mode === 'GATHER') ? data.posGather : data.posScatter;
+
+                data.currentPos.lerp(target, 2.0 * dt || 0.1);
+
+                if (mode === 'SCATTER') {
+                    data.rotation.x += data.spinSpeed.x * dt;
+                    data.rotation.y += data.spinSpeed.y * dt;
+                    data.rotation.z += data.spinSpeed.z * dt;
+                } else {
+                    data.rotation.x = THREE.MathUtils.lerp(data.rotation.x, 0, dt * 2);
+                    data.rotation.z = THREE.MathUtils.lerp(data.rotation.z, 0, dt * 2);
+                    data.rotation.y += 0.5 * dt;
+                }
+
+                const targetScale = data.baseScale;
+                data.currentScale = THREE.MathUtils.lerp(data.currentScale, targetScale, 4 * dt || 0.1);
+
+                dummy.position.copy(data.currentPos);
+                dummy.rotation.copy(data.rotation);
+                dummy.scale.setScalar(data.currentScale);
+                dummy.updateMatrix();
+
+                instancedMeshes[data.type].setMatrixAt(data.instanceIndex, dummy.matrix);
+            }
+
+            for (const mesh of Object.values(instancedMeshes)) {
+                mesh.instanceMatrix.needsUpdate = true;
+            }
+        }
+
+        // --- 灰尘粒子 ---
+        function createDust() {
+            const count = CONFIG.particles.dustCount;
+            const positions = new Float32Array(count * 3);
+            const posGather = new Float32Array(count * 3);
+            const posScatter = new Float32Array(count * 3);
+
+            for (let i = 0; i < count; i++) {
+                // 聚集位置
+                const r1 = 5 + Math.random() * 10;
+                const theta1 = Math.random() * Math.PI * 2;
+                const phi1 = Math.acos(2 * Math.random() - 1);
+                posGather[i * 3] = r1 * Math.sin(phi1) * Math.cos(theta1);
+                posGather[i * 3 + 1] = r1 * Math.sin(phi1) * Math.sin(theta1);
+                posGather[i * 3 + 2] = r1 * Math.cos(phi1);
+
+                // 散开位置
+                const r2 = 15 + Math.random() * 25;
+                const theta2 = Math.random() * Math.PI * 2;
+                const phi2 = Math.acos(2 * Math.random() - 1);
+                posScatter[i * 3] = r2 * Math.sin(phi2) * Math.cos(theta2);
+                posScatter[i * 3 + 1] = r2 * Math.sin(phi2) * Math.sin(theta2);
+                posScatter[i * 3 + 2] = r2 * Math.cos(phi2);
+
+                positions[i * 3] = posScatter[i * 3];
+                positions[i * 3 + 1] = posScatter[i * 3 + 1];
+                positions[i * 3 + 2] = posScatter[i * 3 + 2];
+            }
+
+            dustGeo = new THREE.BufferGeometry();
+            dustGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            dustGeo.userData = { posGather, posScatter };
+
+            const mat = new THREE.PointsMaterial({
+                color: 0xffeebb,
+                size: 0.25,
+                transparent: true,
+                opacity: 0.7,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                sizeAttenuation: true
+            });
+
+            dustPoints = new THREE.Points(dustGeo, mat);
+            mainGroup.add(dustPoints);
+        }
+
+        function updateDust(dt) {
+            const mode = STATE.mode;
+            const positions = dustGeo.attributes.position.array;
+            const { posGather, posScatter } = dustGeo.userData;
+            const count = positions.length / 3;
+
+            const targets = (mode === 'GATHER') ? posGather : posScatter;
+
+            for (let i = 0; i < count; i++) {
+                const idx = i * 3;
+                positions[idx] += (targets[idx] - positions[idx]) * 2.0 * dt;
+                positions[idx + 1] += (targets[idx + 1] - positions[idx + 1]) * 2.0 * dt;
+                positions[idx + 2] += (targets[idx + 2] - positions[idx + 2]) * 2.0 * dt;
+            }
+
+            dustGeo.attributes.position.needsUpdate = true;
+        }
+
+        // --- Photo Particle ---
+        class PhotoParticle {
+            constructor(mesh) {
+                this.mesh = mesh;
+                this.posGather = new THREE.Vector3();
+                this.posScatter = new THREE.Vector3();
+                this.baseScale = 0.8;
+                this.spinSpeed = new THREE.Vector3(
+                    (Math.random() - 0.5) * 0.3,
+                    (Math.random() - 0.5) * 0.3,
+                    (Math.random() - 0.5) * 0.3
+                );
+                this.calculatePositions();
+            }
+
+            calculatePositions() {
+                const r = 8 + Math.random() * 4;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(2 * Math.random() - 1);
+                this.posGather.set(
+                    r * Math.sin(phi) * Math.cos(theta),
+                    r * Math.sin(phi) * Math.sin(theta),
+                    r * Math.cos(phi)
+                );
+
+                const r2 = 12 + Math.random() * 10;
+                const theta2 = Math.random() * Math.PI * 2;
+                const phi2 = Math.acos(2 * Math.random() - 1);
+                this.posScatter.set(
+                    r2 * Math.sin(phi2) * Math.cos(theta2),
+                    r2 * Math.sin(phi2) * Math.sin(theta2),
+                    r2 * Math.cos(phi2)
+                );
+            }
+
+            update(dt, mode, focusTargetMesh) {
+                let target = this.posGather;
+                if (mode === 'SCATTER') target = this.posScatter;
+                else if (mode === 'FOCUS') {
+                    if (this.mesh === focusTargetMesh) {
+                        const desiredWorldPos = new THREE.Vector3(0, 2, 35);
+                        const invMatrix = new THREE.Matrix4().copy(mainGroup.matrixWorld).invert();
+                        target = desiredWorldPos.applyMatrix4(invMatrix);
+                    } else {
+                        target = this.posScatter;
+                    }
+                }
+
+                const lerpSpeed = (mode === 'FOCUS' && this.mesh === focusTargetMesh) ? 5.0 : 2.0;
+                this.mesh.position.lerp(target, lerpSpeed * dt);
+
+                if (mode === 'SCATTER') {
+                    this.mesh.rotation.x += this.spinSpeed.x * dt;
+                    this.mesh.rotation.y += this.spinSpeed.y * dt;
+                    this.mesh.rotation.z += this.spinSpeed.z * dt;
+                } else if (mode === 'GATHER') {
+                    this.mesh.rotation.x = THREE.MathUtils.lerp(this.mesh.rotation.x, 0, dt);
+                    this.mesh.rotation.z = THREE.MathUtils.lerp(this.mesh.rotation.z, 0, dt);
+                    this.mesh.rotation.y += 0.5 * dt;
+                }
+
+                if (mode === 'FOCUS' && this.mesh === focusTargetMesh) {
+                    this.mesh.lookAt(camera.position);
+                }
+
+                let s = this.baseScale;
+                if (mode === 'SCATTER') s = this.baseScale * 2.5;
+                else if (mode === 'FOCUS') {
+                    s = (this.mesh === focusTargetMesh) ? 4.5 : this.baseScale * 0.8;
+                }
+                this.mesh.scale.lerp(new THREE.Vector3(s, s, s), 4 * dt);
+            }
+        }
+
+        let currentPhotoIndex = 0;
+        function selectNextPhoto() {
+            if (!particleSystem.length) return null;
+            const photo = particleSystem[currentPhotoIndex];
+            currentPhotoIndex = (currentPhotoIndex + 1) % particleSystem.length;
+            return photo;
+        }
+
+        function addPhotoToScene(texture) {
+            const img = texture.image;
+            let width = 1.2;
+            let height = 1.2;
+            const baseSize = 1.2;
+
+            if (img.width && img.height) {
+                if (img.width > img.height) {
+                    width = baseSize;
+                    height = baseSize * (img.height / img.width);
+                } else {
+                    height = baseSize;
+                    width = baseSize * (img.width / img.height);
+                }
+            }
+
+            const frameGeo = new THREE.BoxGeometry(width + 0.2, height + 0.2, 0.05);
+            const frameMat = new THREE.MeshStandardMaterial({ color: CONFIG.colors.gold, metalness: 1.0, roughness: 0.1 });
+            const frame = new THREE.Mesh(frameGeo, frameMat);
+
+            const photoGeo = new THREE.PlaneGeometry(width, height);
+            const photoMat = new THREE.MeshBasicMaterial({
+                map: texture,
+                side: THREE.DoubleSide,
+                color: 0x888888,
+                transparent: false
+            });
+
+            const photo = new THREE.Mesh(photoGeo, photoMat);
+            photo.position.z = 0.04;
+
+            const group = new THREE.Group();
+            group.add(frame);
+            group.add(photo);
+
+            const s = 0.8;
+            group.scale.set(s, s, s);
+
+            photoMeshGroup.add(group);
+            particleSystem.push(new PhotoParticle(group));
+        }
+
+        function handleImageUpload(e) {
+            const files = e.target.files;
+            if (!files.length) return;
+            Array.from(files).forEach(f => {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    new THREE.TextureLoader().load(ev.target.result, (t) => {
+                        t.colorSpace = THREE.SRGBColorSpace;
+                        addPhotoToScene(t);
+                    });
+                };
+                reader.readAsDataURL(f);
+            });
+        }
+
+        async function loadImagesFromFolder() {
+            const imageList = [
+                'images/1.jpg', 'images/2.jpg', 'images/3.jpg', 'images/4.jpg', 'images/5.jpg',
+                'images/6.jpg', 'images/7.jpg', 'images/8.jpg', 'images/9.jpg', 'images/10.jpg',
+            ];
+
+            const loader = new THREE.TextureLoader();
+
+            for (const imagePath of imageList) {
+                try {
+                    const texture = await new Promise((resolve, reject) => {
+                        loader.load(imagePath, (t) => {
+                            t.colorSpace = THREE.SRGBColorSpace;
+                            resolve(t);
+                        }, undefined, () => reject(new Error(`Failed to load ${imagePath}`)));
+                    });
+                    addPhotoToScene(texture);
+                } catch (err) {
+                    // 静默跳过
+                }
+            }
+        }
+
+        // --- MEDIAPIPE ---
+        async function initMediaPipe() {
+            video = document.getElementById('webcam');
+
+            const vision = await FilesetResolver.forVisionTasks(
+                "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+            );
+            handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                baseOptions: {
+                    modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+                    delegate: "GPU"
+                },
+                runningMode: "VIDEO",
+                numHands: 1
+            });
+
+            if (navigator.mediaDevices?.getUserMedia) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } });
+                    video.srcObject = stream;
+                    video.addEventListener("loadeddata", predictWebcam);
+                } catch (err) {
+                    console.warn('Camera access failed:', err);
+                    const panel = document.getElementById('webcam-panel');
+                    if (panel) panel.style.display = 'none';
+                }
+            }
+        }
+
+        let lastVideoTime = -1;
+        async function predictWebcam() {
+            if (video.currentTime !== lastVideoTime) {
+                lastVideoTime = video.currentTime;
+                if (handLandmarker) {
+                    const result = handLandmarker.detectForVideo(video, performance.now());
+                    processGestures(result);
+                }
+            }
+            requestAnimationFrame(predictWebcam);
+        }
+
+        const gestureBadge = document.getElementById('gesture-badge');
+
+        function updateGestureBadge(gesture, detected) {
+            if (!gestureBadge) return;
+            if (!detected) {
+                gestureBadge.style.display = 'none';
+                return;
+            }
+            gestureBadge.style.display = 'block';
+            gestureBadge.textContent = gesture;
+
+            switch (gesture) {
+                case 'GATHER ✊':
+                    gestureBadge.className = 'absolute top-2 left-2 px-2 py-1 rounded text-xs font-bold bg-yellow-500 text-black';
+                    break;
+                case 'SCATTER ✋':
+                    gestureBadge.className = 'absolute top-2 left-2 px-2 py-1 rounded text-xs font-bold bg-purple-500 text-white';
+                    break;
+                case 'FOCUS 🤏':
+                    gestureBadge.className = 'absolute top-2 left-2 px-2 py-1 rounded text-xs font-bold bg-cyan-500 text-black';
+                    break;
+                default:
+                    gestureBadge.className = 'absolute top-2 left-2 px-2 py-1 rounded text-xs font-bold bg-gold text-black';
+            }
+            gestureBadge.style.transform = 'scaleX(-1)';
+        }
+
+        let gestureHistory = [];
+        const GESTURE_HISTORY_SIZE = 5;
+
+        function getStableGesture(newGesture) {
+            gestureHistory.push(newGesture);
+            if (gestureHistory.length > GESTURE_HISTORY_SIZE) {
+                gestureHistory.shift();
+            }
+            if (gestureHistory.length === GESTURE_HISTORY_SIZE &&
+                gestureHistory.every(g => g === newGesture)) {
+                return newGesture;
+            }
+            return null;
+        }
+
+        function processGestures(result) {
+            if (result.landmarks && result.landmarks.length > 0) {
+                STATE.hand.detected = true;
+                const lm = result.landmarks[0];
+                STATE.hand.x = (lm[9].x - 0.5) * 2;
+                STATE.hand.y = (lm[9].y - 0.5) * 2;
+
+                const wrist = lm[0];
+                const thumbTip = lm[4];
+                const indexTip = lm[8];
+                const middleTip = lm[12];
+                const ringTip = lm[16];
+                const pinkyTip = lm[20];
+                const palmCenter = lm[9];
+
+                const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y, (a.z || 0) - (b.z || 0));
+
+                const thumbIndexDist = dist(thumbTip, indexTip);
+                const indexToPalm = dist(indexTip, palmCenter);
+                const middleToPalm = dist(middleTip, palmCenter);
+                const ringToPalm = dist(ringTip, palmCenter);
+                const pinkyToPalm = dist(pinkyTip, palmCenter);
+                const indexToWrist = dist(indexTip, wrist);
+                const middleToWrist = dist(middleTip, wrist);
+                const ringToWrist = dist(ringTip, wrist);
+                const pinkyToWrist = dist(pinkyTip, wrist);
+                const palmSize = dist(wrist, palmCenter);
+
+                const normalizedThumbIndex = thumbIndexDist / palmSize;
+                const avgFingerToWrist = (indexToWrist + middleToWrist + ringToWrist + pinkyToWrist) / 4 / palmSize;
+                const avgFingerToPalm = (indexToPalm + middleToPalm + ringToPalm + pinkyToPalm) / 4 / palmSize;
+                const otherFingersOpen = (middleToWrist + ringToWrist + pinkyToWrist) / 3 / palmSize;
+
+                let detectedGesture = 'DETECTING...';
+
+                if (normalizedThumbIndex < 0.3 && otherFingersOpen > 0.8) {
+                    detectedGesture = 'FOCUS';
+                } else if (avgFingerToPalm < 0.5 && avgFingerToWrist < 1.2) {
+                    detectedGesture = 'GATHER';
+                } else if (avgFingerToWrist > 1.5) {
+                    detectedGesture = 'SCATTER';
+                }
+
+                const stableGesture = getStableGesture(detectedGesture);
+
+                let displayGesture = detectedGesture;
+                if (stableGesture && stableGesture !== 'DETECTING...') {
+                    if (stableGesture === 'FOCUS') {
+                        displayGesture = 'FOCUS 🤏';
+                        if (STATE.mode !== 'FOCUS') {
+                            STATE.mode = 'FOCUS';
+                            if (particleSystem.length) {
+                                const selected = selectNextPhoto();
+                                if (selected) {
+                                    STATE.focusTarget = selected.mesh;
+                                }
+                            }
+                        }
+                    } else if (stableGesture === 'GATHER') {
+                        displayGesture = 'GATHER ✊';
+                        STATE.mode = 'GATHER';
+                        STATE.focusTarget = null;
+                    } else if (stableGesture === 'SCATTER') {
+                        displayGesture = 'SCATTER ✋';
+                        STATE.mode = 'SCATTER';
+                        STATE.focusTarget = null;
+                    }
+                } else {
+                    if (detectedGesture !== 'DETECTING...') {
+                        displayGesture = detectedGesture + '...';
+                    }
+                }
+
+                updateGestureBadge(displayGesture, true);
+            } else {
+                STATE.hand.detected = false;
+                gestureHistory = [];
+                updateGestureBadge('', false);
+            }
+        }
+
+        function setupEvents() {
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                composer.setSize(window.innerWidth, window.innerHeight);
+            });
+            document.getElementById('file-input').addEventListener('change', handleImageUpload);
+
+            const uiLayer = document.getElementById('ui-layer');
+            const webcamPanel = document.getElementById('webcam-panel');
+            const debugToggle = document.getElementById('debug-toggle');
+
+            let isPureMode = false;
+
+            function togglePureMode() {
+                isPureMode = !isPureMode;
+                if (uiLayer) uiLayer.style.display = isPureMode ? 'none' : 'flex';
+                if (webcamPanel) webcamPanel.style.display = isPureMode ? 'none' : 'block';
+            }
+
+            if (debugToggle) {
+                debugToggle.addEventListener('change', (e) => {
+                    if (webcamPanel) {
+                        webcamPanel.style.display = e.target.checked ? 'block' : 'none';
+                    }
+                });
+            }
+
+            window.addEventListener('keydown', (e) => {
+                const key = e.key.toLowerCase();
+                if (key === 'd') {
+                    togglePureMode();
+                }
+                if (key === 'f') {
+                    // 手动触发烟花
+                    for (let i = 0; i < 5; i++) {
+                        setTimeout(() => launchFirework(), i * 200);
+                    }
+                }
+                if (key === 'c') {
+                    // 手动触发庆祝
+                    triggerCelebration();
+                }
+            });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = clock.getDelta();
+
+            // 旋转控制
+            if (STATE.hand.detected) {
+                const deadZone = 0.3;
+                if (STATE.hand.x < -deadZone) {
+                    const rotSpeed = Math.abs(STATE.hand.x + deadZone) * 2.0;
+                    STATE.rotation.y -= rotSpeed * dt;
+                } else if (STATE.hand.x > deadZone) {
+                    const rotSpeed = (STATE.hand.x - deadZone) * 2.0;
+                    STATE.rotation.y += rotSpeed * dt;
+                } else {
+                    if (STATE.mode === 'GATHER') {
+                        STATE.rotation.y += 0.2 * dt;
+                    }
+                }
+                const targetRotX = STATE.hand.y * Math.PI * 0.15;
+                STATE.rotation.x += (targetRotX - STATE.rotation.x) * 2.0 * dt;
+            } else {
+                if (STATE.mode === 'GATHER') {
+                    STATE.rotation.y += 0.2 * dt;
+                    STATE.rotation.x += (0 - STATE.rotation.x) * 2.0 * dt;
+                } else {
+                    STATE.rotation.y += 0.1 * dt;
+                }
+            }
+
+            mainGroup.rotation.y = STATE.rotation.y;
+            mainGroup.rotation.x = STATE.rotation.x;
+
+            // 更新各系统
+            updateSnowfall(dt);
+            updateFireworks(dt);
+            updateConfetti(dt);
+            updateDigitParticles(dt);
+            updateInstancedMeshes(dt);
+            updateDust(dt);
+
+            particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
+
+            composer.render();
+        }
+
+        init();
+    </script>
+</body>
+</html>
